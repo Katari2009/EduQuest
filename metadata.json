@@ -1,0 +1,5 @@
+{
+  "name": "EduQuest",
+  "description": "An interactive and gamified learning PWA that transforms curriculum plans into engaging activities. It helps students master new concepts through AI-generated challenges, tracks their progress with visual feedback, and allows them to generate modern reports of their achievements.",
+  "requestFramePermissions": []
+}
