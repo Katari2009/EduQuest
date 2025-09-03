@@ -2,10 +2,47 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Question } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+// This will hold the initialized client to avoid re-fetching the key every time.
+let ai: GoogleGenAI | null = null;
+
+/**
+ * Asynchronously gets the Gemini AI client.
+ * It fetches the API key from our secure serverless function a single time
+ * and then caches the client for subsequent requests.
+ */
+const getAiClient = async (): Promise<GoogleGenAI> => {
+  // If the client is already initialized, return it immediately.
+  if (ai) {
+    return ai;
+  }
+
+  try {
+    // Fetch the API key from our secure endpoint.
+    const response = await fetch('/api/get-key');
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to fetch API key from server.');
+    }
+    const { apiKey } = await response.json();
+    if (!apiKey) {
+      throw new Error("API key was not returned from the server.");
+    }
+    
+    // Initialize the client with the fetched key and cache it.
+    ai = new GoogleGenAI({ apiKey });
+    return ai;
+  } catch (error) {
+    console.error("Could not initialize Gemini AI Client:", error);
+    // Throw the error so the UI can handle it (e.g., show the fallback questions).
+    throw error;
+  }
+};
+
 
 export const generateQuestions = async (topic: string, objective: string): Promise<Question[]> => {
   try {
+    const client = await getAiClient(); // First, ensure the client is ready.
+
     const prompt = `
     Based on the following educational curriculum for a statistics class, generate 15 unique multiple-choice questions with 4 options each.
     These questions must be in Spanish.
@@ -17,7 +54,7 @@ export const generateQuestions = async (topic: string, objective: string): Promi
     Return the output as a JSON object that matches the specified schema.
     `;
 
-    const response = await ai.models.generateContent({
+    const response = await client.models.generateContent({
         model: "gemini-2.5-flash",
         contents: prompt,
         config: {
@@ -77,6 +114,8 @@ export const generateQuestions = async (topic: string, objective: string): Promi
 
 export const generatePaesQuestions = async (topic: string, objective: string): Promise<Question[]> => {
   try {
+    const client = await getAiClient(); // First, ensure the client is ready.
+
     const prompt = `
     Based on the following educational curriculum for a PAES Math test preparation module, generate 20 unique multiple-choice questions with 5 options each.
     These questions must be in Spanish and should be similar in style and difficulty to the Chilean PAES M1 test.
@@ -88,7 +127,7 @@ export const generatePaesQuestions = async (topic: string, objective: string): P
     Return the output as a JSON object that matches the specified schema.
     `;
 
-    const response = await ai.models.generateContent({
+    const response = await client.models.generateContent({
         model: "gemini-2.5-flash",
         contents: prompt,
         config: {
@@ -125,7 +164,7 @@ export const generatePaesQuestions = async (topic: string, objective: string): P
     // Return mock PAES data on failure
     return [
       { questionText: "¿Cuál es el valor de (2/3)⁻²?", options: ["4/9", "9/4", "-4/9", "-9/4", "3/2"], correctAnswer: "9/4", explanation: "Un exponente negativo invierte la base. (2/3)⁻² = (3/2)². Luego, (3/2)² = 3²/2² = 9/4." },
-      { questionText: "Si f(x) = 3x - 5, ¿cuál es el valor de f(2) + f(-1)?", options: ["-3", "-6", "1", "-5", "4"], correctAnswer: "-3", explanation: "f(2) = 3(2) - 5 = 6 - 5 = 1. f(-1) = 3(-1) - 5 = -3 - 5 = -8. Entonces, 1 + (-8) = -7. Oops, re-calculation: 1 + (-8) = -7. Let's fix the question. Should be f(2)+f(-1) => 1 + (-8) = -7. Let's make f(x)=2x+1. f(2)=5, f(-1)=-1. 5-1=4. Let's adjust the answer. Si f(x) = x²+1, f(2)=5, f(-1)=2. Sum=7. Let's use the original question and fix the calculation. f(2)=1, f(-1)=-8. 1+(-8)=-7. Let's fix the options. New options: ['-3', '-6', '-7', '-5', '4']. Correct Answer: '-7'. I will use this. But -3 is already an option, let's change it. Correct answer is 1 + (-8) = -7. Let's make f(x)=x+3. f(2)=5, f(-1)=2, sum is 7. Options: [3, 6, 7, 5, 4]. Correct: 7. This is too simple. Okay, let's use the first one and correct the options. f(x) = 3x-5. f(2) = 1, f(-1) = -8. Sum = -7. Options: ['-3', '-6', '-7', '5', '4']. Correct: '-7'." },
+      { questionText: "Si f(x) = 3x - 5, ¿cuál es el valor de f(2) + f(-1)?", options: ["-3", "-6", "-7", "5", "4"], correctAnswer: "-7", explanation: "f(2) = 3(2) - 5 = 6 - 5 = 1. f(-1) = 3(-1) - 5 = -3 - 5 = -8. La suma es 1 + (-8) = -7." },
       { questionText: "Un producto cuesta $5.000. Si se le aplica un 20% de descuento, ¿cuál es el precio final?", options: ["$1.000", "$4.000", "$4.500", "$6.000", "$4.800"], correctAnswer: "$4.000", explanation: "El descuento es 5000 * 0.20 = $1000. El precio final es 5000 - 1000 = $4000." },
       { questionText: "Al resolver el sistema de ecuaciones: x + y = 8 y x - y = 2, el valor de x es:", options: ["3", "4", "5", "6", "2"], correctAnswer: "5", explanation: "Sumando ambas ecuaciones, obtenemos 2x = 10, por lo que x = 5." },
       { questionText: "¿Cuál es el área de un triángulo de base 10 cm y altura 5 cm?", options: ["50 cm²", "25 cm²", "15 cm²", "30 cm²", "100 cm²"], correctAnswer: "25 cm²", explanation: "El área de un triángulo es (base * altura) / 2. (10 * 5) / 2 = 50 / 2 = 25 cm²." },
